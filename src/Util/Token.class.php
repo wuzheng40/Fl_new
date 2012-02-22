@@ -500,7 +500,7 @@ abstract class Fl_Token extends Fl_Base {
 	 */
 	public function throwException($msg = '') {
 		$ext = ' at line:' . ($this->line + 1) . ', col:' . ($this->col + 1) . ', pos:' . $this->pos;
-		throw new Fl_Exception ( $msg . $ext, $code );
+		parent::throwException ( $msg . $ext, $code );
 	}
 	/**
 	 * 

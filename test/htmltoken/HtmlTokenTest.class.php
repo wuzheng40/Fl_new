@@ -138,4 +138,10 @@ class HtmlTokenTest extends FlTest {
 		$tokens = $this->getTokens ( '15.text' );
 		//print_r($tokens);
 	}
+	public function test16(){
+		$this->getFlInstance1();
+		$tokens = $this->getTokens ( '16.text' );
+		$this->assertEqual ( count ( $tokens ), 13 );
+		$this->assertEqual($tokens[12]['value'], '{=$pager.cl = ($urlPara.cl != 3)?"&cl=`$urlPara.cl`":"" =}');
+	}
 }

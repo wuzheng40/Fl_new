@@ -52,6 +52,15 @@ class JsTokenTest extends FlTest {
 		$this->assertEqual ( $tokens [22] ['type'], FL_TOKEN_JS_PUNC );
 		$this->assertEqual ( $tokens [19] ['value'], 'Array' );
 	}
+	
+	public function test16() {
+		$this->getFlInstance ();
+		$tokens = $this->getTokens ( '16.text' );
+		$this->assertEqual ( count ( $tokens ), 5 );
+		$this->assertEqual ( $tokens [3] ['type'], FL_TOKEN_JS_NUMBER );
+		$this->assertEqual ( $tokens [3] ['value'], '0xC1BDCEEE' );
+	}
+	
 	public function test18() {
 		$this->getFlInstance ();
 		//return;
@@ -92,7 +101,7 @@ class JsTokenTest extends FlTest {
 		$tokens = $this->getTokens ( '23.text' );
 		$this->assertEqual ( count ( $tokens ), 5 );
 		$this->assertEqual ( $tokens [3] ['type'], FL_TOKEN_JS_REGEXP );
-		$this->assertEqual ( $tokens [3] ['value'][0], '/^(?:(\w+):)?(?:\/\/(?:(?:([^:@\/]*):?([^:@\/]*))?@)?([^:\/?#])(?::(\d))?)?(..?$|(?:[^?#\/]\/))([^?#]*)(?:\?([^#]))?(?:#(.))?/' );
+		$this->assertEqual ( $tokens [3] ['value'] [0], '/^(?:(\w+):)?(?:\/\/(?:(?:([^:@\/]*):?([^:@\/]*))?@)?([^:\/?#])(?::(\d))?)?(..?$|(?:[^?#\/]\/))([^?#]*)(?:\?([^#]))?(?:#(.))?/' );
 	}
 	public function test24() {
 		$this->getFlInstance ();
@@ -102,5 +111,20 @@ class JsTokenTest extends FlTest {
 		$this->assertEqual ( $tokens [26] ['value'], '\'\\\\"\'' );
 		$this->assertEqual ( $tokens [24] ['value'], '\'"\'' );
 		$this->assertEqual ( $tokens [22] ['value'], '\'\\\\r\'' );
+	}
+	public function test25() {
+		$this->getFlInstance ();
+		$tokens = $this->getTokens ( '25.text' );
+		$this->assertEqual ( count ( $tokens ), 4 );
+		$this->assertEqual ( $tokens [3] ['value'], '"\\0"' );
+	}
+	public function test26() {
+		$this->getFlInstance ();
+		$tokens = $this->getTokens ( '26.text' );
+		$this->assertEqual ( count ( $tokens ), 72 );
+		$this->assertEqual ( $tokens [71] ['value'], '<&/if&>' );
+		$this->assertEqual ( $tokens [64] ['value'], ',' );
+		$this->assertEqual ( $tokens [55] ['value'], '"su"' );
+		$this->assertEqual ( $tokens [49] ['value'], '"<&$sc.source|sp_escape_data&>"' );
 	}
 }

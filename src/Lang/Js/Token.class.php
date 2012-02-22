@@ -5,6 +5,7 @@ Fl::loadClass ( "Fl_Js_Static" );
  * 
  * JS的词法分析
  * @author welefen
+ * @version 1.0-2012.02.15
  *
  */
 class Fl_Js_Token extends Fl_Token {
@@ -173,7 +174,7 @@ class Fl_Js_Token extends Fl_Token {
 	 */
 	public function getNumberToken($char) {
 		$this->tmp .= $char;
-		if (! Fl_Js_Static::isNumber ( $this->tmp )) {
+		if (! Fl_Js_Static::isNumberPrefix ( $this->tmp ) && ! Fl_Js_Static::isNumber ( $this->tmp )) {
 			$this->tmp = '';
 			$this->pendingNextChar = true;
 			return true;

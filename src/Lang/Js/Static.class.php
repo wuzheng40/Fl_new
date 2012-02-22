@@ -54,6 +54,8 @@ class Fl_Js_Static {
 	 * @var RegexIterator
 	 */
 	public static $decNumber = '/^\d*\.?\d*(?:e[+-]?\d*(?:\d\.?|\.?\d)\d*)?$/i';
+	
+	public static $prefixNumber = '/^0x?$/i';
 	/**
 	 * 
 	 * 单个操作符
@@ -99,6 +101,18 @@ class Fl_Js_Static {
 	 * @var array
 	 */
 	public static $unarySuffix = array ("--", "++" );
+	/**
+	 * 
+	 * 赋值运算符
+	 * @var array
+	 */
+	public static $assignment = array ("+=" => "+", "-=" => "-", "/=" => "/", "*=" => "*", "%=" => "%", ">>=" => ">>", "<<=" => "<<", ">>>=" => ">>>", "|=" => "|", "^=" => "^", "&=" => "&" );
+	/**
+	 * 
+	 * 优先权
+	 * @var array
+	 */
+	public static $precedence = array ("!=" => 6, "!==" => 6, "%" => 10, "&" => 5, "&&" => 2, "*" => 10, "+" => 9, "-" => 9, "/" => 10, "<" => 7, "<<" => 8, "<=" => 7, "==" => 6, "===" => 6, ">" => 7, ">=" => 7, ">>" => 8, ">>>" => 8, "^" => 4, "in" => 7, "instanceof" => 7, "|" => 3, "||" => 1 );
 	/**
 	 * 
 	 * 判断接下来是否允许正则
@@ -147,13 +161,7 @@ class Fl_Js_Static {
 	 * @param string $char
 	 */
 	public static function isIdentifierChar($char) {
-		return	self::isIdentifierStart ( $char ) 
-				|| self::isDigit ( $char ) 
-				|| preg_match ( self::$unicode ['space_combining_mark'], $char ) 
-				|| preg_match ( self::$unicode ['connector_punctuation'], $char ) 
-				|| preg_match ( self::$unicode ['non_spacing_mark'], $char ) 
-				|| $char === "\x{u200c}" 
-				|| $char === "\x{u200d}";
+		return self::isIdentifierStart ( $char ) || self::isDigit ( $char ) || preg_match ( self::$unicode ['space_combining_mark'], $char ) || preg_match ( self::$unicode ['connector_punctuation'], $char ) || preg_match ( self::$unicode ['non_spacing_mark'], $char ) || $char === "\x{u200c}" || $char === "\x{u200d}";
 	}
 	/**
 	 * 
@@ -222,8 +230,16 @@ class Fl_Js_Static {
 	}
 	/**
 	 * 
+	 * 是数值的前缀
+	 * @param string $number
+	 */
+	public static function isNumberPrefix($number) {
+		return preg_match ( self::$prefixNumber, $number );
+	}
+	/**
+	 * 
 	 * 判断是否是数字
-	 * @param number $number
+	 * @param string $number
 	 */
 	public static function isNumber($number) {
 		return preg_match ( self::$hexNumber, $number ) || preg_match ( self::$octNumber, $number ) || preg_match ( self::$decNumber, $number );
@@ -242,5 +258,34 @@ class Fl_Js_Static {
 			}
 		}
 		return true;
+	}
+	/**
+	 * 
+	 * 是否是个赋值运算符
+	 * @param string $value
+	 */
+	public static function isAssignment($value) {
+		return array_key_exists ( $value, self::$assignment );
+	}
+	/**
+	 * 
+	 * 获取赋值运算符的值
+	 * @param string $key
+	 */
+	public static function getAssignmentValue($key) {
+		return self::$assignment [$key];
+	}
+	/**
+	 * 
+	 * 获取优先权
+	 */
+	public static function getPrecedenceValue($key) {
+		return self::$precedence [$key];
+	}
+	public static function isUnaryPrefix($key) {
+		return in_array ( $key, self::$unaryPrefix );
+	}
+	public static function isUnarySuffix($key) {
+		return in_array ( $key, self::$unarySuffix );
 	}
 }
