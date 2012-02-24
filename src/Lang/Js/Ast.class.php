@@ -74,8 +74,7 @@ class Fl_Js_Ast extends Fl_Base {
 		$this->tokenInstance = $this->getTokenInstance ();
 	}
 	/**
-	 * 
-	 * 
+	 * statement处理
 	 */
 	public function statementAst() {
 		if ($this->isToken ( FL_TOKEN_JS_OPERATOR, "/" ) || $this->isToken ( FL_TOKEN_JS_OPERATOR, "/=" )) {
@@ -89,11 +88,18 @@ class Fl_Js_Ast extends Fl_Base {
 			case FL_TOKEN_JS_ATOM :
 				return $this->simpleStatement ();
 			case FL_TOKEN_JS_NAME :
-				return $this->isToken ( FL_TOKEN_JS_PUNC, ":", $this->peekToken ) ? $this->labeledStatement ( $this->execEach ( $this->currentToken ['value'], 'getNextToken', 'getNextToken' ) ) : $this->simpleStatement ();
+				if ($this->isToken ( FL_TOKEN_JS_PUNC, ":", $this->peekToken )) {
+					$value = $this->currentToken ['value'];
+					$this->getNextToken ();
+					$this->getNextToken ();
+					return $this->labeledStatement ( $value );
+				} else {
+					return $this->simpleStatement ();
+				}
 			case FL_TOKEN_JS_PUNC :
 				switch ($this->currentToken ['value']) {
 					case "{" :
-						return array ("block", $this->block_ () );
+						return array ("block", $this->getBlockAst () );
 					case "[" :
 					case "(" :
 						return $this->simpleStatement ();
@@ -114,28 +120,88 @@ class Fl_Js_Ast extends Fl_Base {
 				}
 		}
 	}
+	/**
+	 * 
+	 * simple statement处理
+	 */
+	public function simpleStatement() {
+		$expression = $this->expressionAst ();
+		$this->isSemicolon ();
+		return array ("stat", $expression );
+	}
+	/**
+	 * 
+	 * label statement处理
+	 */
+	public function labeledStatement($label) {
+		$this->labels [] = $label;
+		$start = $this->currentToken;
+		$stat = $this->statementAst ();
+		if (! Fl_Js_Static::isLabelStatement ( $stat [0] )) {
+			$this->unexpectTokenError ( $start );
+		}
+		array_pop ( $this->labels );
+		return array ("label", $label, $stat );
+	}
+	
+	/**
+	 * 
+	 * break的处理
+	 */
 	public function breakStatement() {
 		return $this->breakCont ( "break" );
 	}
+	/**
+	 * 
+	 * continue的处理
+	 */
 	public function continueStatement() {
 		return $this->breakCont ( "continue" );
 	}
+	/**
+	 * 
+	 * debugger的处理
+	 */
 	public function debuggerStatement() {
 		$this->isSemicolon ();
 		return array ("debugger" );
 	}
+	/**
+	 * 
+	 * do while循环的处理
+	 */
 	public function doStatement() {
-		$body = $this->statementAst ();
+		$body = $this->inLoop ( 'statementAst' );
 		$this->expectToken ( FL_TOKEN_JS_KEYWORD, "while" );
-		$parent = $this->parenthesised ();
+		$condition = $this->getParenthesisedAst ();
 		$this->isSemicolon ();
-		return array ('do', $parent, $body );
+		return array ('do', $condition, $body );
 	}
+	/**
+	 * 
+	 * for循环的处理
+	 */
 	public function forStatement() {
 		$this->expectToken ( FL_TOKEN_JS_PUNC, "(" );
 		$init = null;
 		if (! $this->isToken ( FL_TOKEN_JS_PUNC, ";" )) {
-					
+			if ($this->isToken ( FL_TOKEN_JS_KEYWORD, 'var' )) {
+				$this->getNextToken ();
+				$init = $this->varStatement ( true );
+			} else {
+				$init = $this->expressionAst ( true, true );
+			}
+			//for(var a in xxx)
+			if ($this->isToken ( FL_TOKEN_JS_KEYWORD, 'in' )) {
+				if ($init [0] === 'var' && count ( $init [1] ) > 1) {
+					$this->throwException ( "Only one variable declaration allowed in for..in loop" );
+				}
+				$lhs = $init [0] === 'var' ? array ("name", $init [1] [0] ) : $init;
+				$this->getNextToken ();
+				$obj = $this->expressionAst ();
+				$this->expectToken ( FL_TOKEN_JS_PUNC, ")" );
+				return array ("for-in", $init, $lhs, $obj, $this->inLoop ( 'statementAst' ) );
+			}
 		}
 		//处理 for(;xxx) 这种
 		$this->expectToken ( FL_TOKEN_JS_PUNC, ";" );
@@ -145,16 +211,261 @@ class Fl_Js_Ast extends Fl_Base {
 		$this->expectToken ( FL_TOKEN_JS_PUNC, ")" );
 		return array ("for", $init, $test, $step, $this->statementAst () );
 	}
-	
-	public function breakCont() {
-	
+	/**
+	 * 
+	 * 处理函数
+	 */
+	public function functionStatement($inStatement = true) {
+		$name = null;
+		if ($this->isToken ( FL_TOKEN_JS_NAME )) {
+			$name = $this->currentToken ['value'];
+			$this->getNextToken ();
+		}
+		if ($inStatement && ! $name) {
+			$this->unexpectTokenError ();
+		}
+		$this->expectToken ( FL_TOKEN_JS_PUNC, "(" );
+		$type = $inStatement ? "defun" : "function";
+		//获取函数参数
+		$first = true;
+		$arguments = array ();
+		while ( ! $this->isToken ( FL_TOKEN_JS_PUNC, ")" ) ) {
+			if ($first) {
+				$first = false;
+			} else {
+				$this->expectToken ( FL_TOKEN_JS_PUNC, "," );
+			}
+			if (! $this->isToken ( FL_TOKEN_JS_NAME )) {
+				$this->unexpectTokenError ();
+			}
+			$arguments [] = $this->currentToken ['value'];
+			$this->getNextToken ();
+		}
+		//获取函数body
+		++ $this->funtionDepth;
+		$loop = $this->loopDepth;
+		$this->loopDepth = 0;
+		$body = $this->getBlockAst ();
+		-- $this->funtionDepth;
+		$this->loopDepth = $loop;
+		
+		return array ($type, $name, $arguments, $body );
 	}
-	public function labeledStatement() {
-	
+	/**
+	 * 
+	 * if处理
+	 */
+	public function ifStatement() {
+		$condition = $this->getParenthesisedAst ();
+		$body = $this->statementAst ();
+		$else = false;
+		if ($this->isToken ( FL_TOKEN_JS_KEYWORD, "else" )) {
+			$this->getNextToken ();
+			$else = $this->statementAst ();
+		}
+		return array ("if", $condition, $body, $else );
 	}
-	public function simpleStatement() {
-	
+	/**
+	 * 
+	 * return处理
+	 */
+	public function returnStatement() {
+		if ($this->funtionDepth === 0) {
+			$this->throwException ( "'return' outside of function" );
+		}
+		$return = '';
+		if ($this->isToken ( FL_TOKEN_JS_PUNC, ";" )) {
+			$this->getNextToken ();
+		} else if ($this->canInsertSemicolon ()) {
+		
+		} else {
+			$return = $this->expressionAst ();
+			$this->isSemicolon ();
+		}
+		return array ("return", $return );
 	}
+	/**
+	 * 
+	 * switch处理
+	 */
+	public function switchStatement($getResult = true) {
+		if ($getResult) {
+			$condition = $this->getParenthesisedAst ();
+			return array ("switch", $condition, $this->inLoop ( 'switchStatement', false ) );
+		}
+		$this->expectToken ( FL_TOKEN_JS_PUNC, "{" );
+		$result = array ();
+		$cur = null;
+		while ( ! $this->isToken ( FL_TOKEN_JS_PUNC, "}" ) ) {
+			if ($this->currentToken === false) {
+				$this->unexpectTokenError ();
+			}
+			if ($this->isToken ( FL_TOKEN_JS_KEYWORD, "case" )) {
+				$this->getNextToken ();
+				$cur = array ();
+				$result [] = array ($this->expressionAst (), $cur );
+				$this->expectToken ( FL_TOKEN_JS_PUNC, ":" );
+			} else if ($this->isToken ( FL_TOKEN_JS_KEYWORD, "default" )) {
+				$this->getNextToken ();
+				$this->expectToken ( FL_TOKEN_JS_PUNC, ":" );
+				$cur = array ();
+				$result [] = array (null, $cur );
+			} else {
+				if (! $cur) {
+					$this->unexpectTokenError ();
+				}
+				$cur [] = $this->statementAst ();
+			}
+		}
+		$this->getNextToken ();
+		return $result;
+	}
+	/**
+	 * 
+	 * throw处理
+	 */
+	public function throwStatement() {
+		if ($this->currentToken ['newlineBefore']) {
+			$this->throwException ( "Illegal newline after 'throw'" );
+		}
+		$value = $this->expressionAst ();
+		$this->isSemicolon ();
+		return array ('throw', $value );
+	}
+	/**
+	 * 
+	 * try处理
+	 */
+	public function tryStatement() {
+		$body = $this->getBlockAst ();
+		$bcatch = '';
+		$bfinally = '';
+		if ($this->isToken ( FL_TOKEN_JS_KEYWORD, "catch" )) {
+			$this->getNextToken ();
+			$this->expectToken ( FL_TOKEN_JS_PUNC, "(" );
+			if (! $this->isToken ( FL_TOKEN_JS_NAME )) {
+				$this->throwException ( "Name expected" );
+			}
+			$name = $this->currentToken ['value'];
+			$this->getNextToken ();
+			$this->expectToken ( FL_TOKEN_JS_PUNC, ")" );
+			$bcatch = array ($name, $this->getBlockAst () );
+		}
+		if ($this->isToken ( FL_TOKEN_JS_KEYWORD, "finally" )) {
+			$this->getNextToken ();
+			$bfinally = $this->getBlockAst ();
+		}
+		if (! $bcatch && ! $bfinally) {
+			$this->throwException ( "Missing catch/finally blocks" );
+		}
+		return array ("try", $body, $bcatch, $bfinally );
+	}
+	/**
+	 * 
+	 * var处理
+	 */
+	public function varStatement($notIn = false) {
+		$result = array ("var", $this->getVarDefs ( $notIn ) );
+		$this->isSemicolon ();
+		return $result;
+	}
+	/**
+	 * 
+	 * const处理
+	 */
+	public function constStatement() {
+		$result = array ("const", $this->getVarDefs () );
+		$this->isSemicolon ();
+		return $result;
+	}
+	/**
+	 * 
+	 * while处理
+	 */
+	public function whileStatement() {
+		return array ('while', $this->getParenthesisedAst (), $this->inLoop ( 'statementAst' ) );
+	}
+	/**
+	 * 
+	 * with处理
+	 */
+	public function withStatement() {
+		return array ('with', $this->getParenthesisedAst (), $this->statementAst () );
+	}
+	
+	/**
+	 * 
+	 * var的定义
+	 */
+	public function getVarDefs($notIn = false) {
+		$result = array ();
+		while ( true ) {
+			if (! $this->isToken ( FL_TOKEN_JS_NAME )) {
+				$this->unexpectTokenError ();
+			}
+			$name = $this->currentToken ['value'];
+			$this->getNextToken ();
+			if ($this->isToken ( FL_TOKEN_JS_OPERATOR, "=" )) {
+				$this->getNextToken ();
+				$result [] = array ($name, $this->expressionAst ( false, $notIn ) );
+			} else {
+				$result [] = array ($name );
+			}
+			if (! $this->isToken ( FL_TOKEN_JS_PUNC, "," )) {
+				break;
+			}
+			$this->getNextToken ();
+		}
+		return $result;
+	}
+	/**
+	 * 
+	 * 获取{}内值
+	 */
+	public function getBlockAst() {
+		$this->expectToken ( FL_TOKEN_JS_PUNC, "{" );
+		$result = array ();
+		while ( ! $this->isToken ( FL_TOKEN_JS_PUNC, "}" ) ) {
+			if ($this->currentToken === false) {
+				$this->unexpectTokenError ();
+			}
+			$result [] = $this->statementAst ();
+		}
+		$this->getNextToken ();
+		return $result;
+	}
+	/**
+	 * 
+	 * 获取()内值
+	 */
+	public function getParenthesisedAst() {
+		$this->expectToken ( FL_TOKEN_JS_PUNC, "(" );
+		$ex = $this->expressionAst ();
+		$this->expectToken ( FL_TOKEN_JS_PUNC, ")" );
+		return $ex;
+	}
+	/**
+	 * 
+	 * break or continue
+	 * @param string $type
+	 */
+	public function breakCont($type = '') {
+		$name = '';
+		if (! $this->canInsertSemicolon ()) {
+			$name = $this->isToken ( FL_TOKEN_JS_NAME ) ? $this->currentToken ['value'] : null;
+		}
+		if ($name !== null) {
+			$this->getNextToken ();
+			if (! in_array ( $name, $this->labels )) {
+				$this->throwException ( "Label " . $name . " without matching loop or statement" );
+			}
+		} else if ($this->loopDepth == 0) {
+			$this->throwException ( $type . " not inside a loop or switch" );
+		}
+		$this->isSemicolon ();
+		return array ($type, $name );
+	}
+	
 	/**
 	 * 
 	 * 操作符
@@ -162,7 +473,7 @@ class Fl_Js_Ast extends Fl_Base {
 	 * @param number $minPrec
 	 * @param boolean $notIn
 	 */
-	public function exprOperator($left, $minPrec, $notIn) {
+	public function exprOperator($left, $minPrec, $notIn = false) {
 		$op = $this->isToken ( FL_TOKEN_JS_OPERATOR ) ? $this->currentToken ['value'] : null;
 		if ($op && $op === 'in' && $notIn) {
 			$op = null;
@@ -175,6 +486,11 @@ class Fl_Js_Ast extends Fl_Base {
 		}
 		return $left;
 	}
+	/**
+	 * 
+	 * 操作符
+	 * @param boolean $notIn
+	 */
 	public function exprOperators($notIn) {
 		return $this->exprOperator ( $this->maybeUnary ( true ), 0, $notIn );
 	}
@@ -187,7 +503,6 @@ class Fl_Js_Ast extends Fl_Base {
 		if ($this->isToken ( FL_TOKEN_JS_OPERATOR ) && Fl_Js_Static::isUnaryPrefix ( $this->currentToken ['value'] )) {
 			return $this->makeUnary ( "unary-prefix", $this->execEach ( $this->currentToken ['value'], 'getNextToken' ), $this->maybeUnary ( $allowCalls ) );
 		}
-		//$val = $this->exprAtomAst ( $allowCalls );
 		$val = $this->maybeEmbedTokens ( 'exprAtomAst', $allowCalls );
 		while ( $this->isToken ( FL_TOKEN_JS_OPERATOR ) && Fl_Js_Static::isUnarySuffix ( $this->currentToken ['value'] ) && ! $this->currentToken ['newlineBefore'] ) {
 			$val = $this->makeUnary ( "unary-postfix", $this->currentToken ['value'], $val );
@@ -195,34 +510,161 @@ class Fl_Js_Ast extends Fl_Base {
 		}
 		return $val;
 	}
+	/**
+	 * 
+	 * 一元操作符
+	 * @param string $tag
+	 * @param string $op
+	 * @param array $expr
+	 */
 	public function makeUnary($tag, $op, $expr) {
 		if (($op === "++" || $op === "--") && ! $this->isAssignable ( $expr )) {
 			$this->throwException ( "Invalid use of " . $op . " operator" );
 		}
 		return array ($tag, $op, $expr );
 	}
-	public function exprAtomAst($allowCalls) {
+	/**
+	 * 
+	 * new处理
+	 */
+	public function newStatement() {
+		$newExp = $this->exprAtomAst ( false );
+		$args = array ();
+		if ($this->isToken ( FL_TOKEN_JS_PUNC, "(" )) {
+			$this->getNextToken ();
+			$args = $this->exprList ( ")" );
+		}
+		return $this->subScripts ( array ("new", $newExp, $args ), true );
+	}
+	/**
+	 * 
+	 * 获取表达式内部列表
+	 * @param string $closing
+	 * @param boolean $allowTrailingComma
+	 * @param boolean $allowEmpty
+	 */
+	public function exprList($closing = "", $allowTrailingComma = false, $allowEmpty = false) {
+		$first = true;
+		$result = array ();
+		while ( ! $this->isToken ( FL_TOKEN_JS_PUNC, $closing ) ) {
+			if ($first) {
+				$first = false;
+			} else {
+				$this->expectToken ( FL_TOKEN_JS_PUNC, "," );
+			}
+			if ($allowTrailingComma && $this->isToken ( FL_TOKEN_JS_PUNC, $closing )) {
+				break;
+			}
+			if ($this->isToken ( FL_TOKEN_JS_PUNC, "," ) && $allowEmpty) {
+				$result [] = array ("atom", "undefined" );
+			} else {
+				$result [] = $this->expressionAst ( false );
+			}
+		}
+		$this->getNextToken ();
+		return $result;
+	}
+	public function subScripts($expr, $allowCalls = false) {
+		if ($this->isToken ( FL_TOKEN_JS_PUNC, "." )) {
+			$this->getNextToken ();
+			return $this->subScripts ( array ("dot", $expr, $this->asName () ), $allowCalls );
+		} elseif ($this->isToken ( FL_TOKEN_JS_PUNC, "[" )) {
+			$this->getNextToken ();
+			$value = $this->expressionAst ();
+			$this->expectToken ( FL_TOKEN_JS_PUNC, "]" );
+			return $this->subScripts ( array ("sub", $expr, $value ), $allowCalls );
+		} elseif ($allowCalls && $this->isToken ( FL_TOKEN_JS_PUNC, "{" )) {
+			$this->getNextToken ();
+			return $this->subScripts ( array ("call", $expr, $this->exprList ( ")" ) ), true );
+		}
+		return $expr;
+	}
+	/**
+	 * 
+	 * 单一关键字，如：null, false, true, undefined, new
+	 * @param boolean $allowCalls
+	 */
+	public function exprAtomAst($allowCalls = false) {
 		if ($this->isToken ( FL_TOKEN_JS_OPERATOR, "new" )) {
 			$this->getNextToken ();
-			$this->new_ ();
+			$this->newStatement ();
 		}
 		if ($this->isToken ( FL_TOKEN_JS_PUNC )) {
 			switch ($this->currentToken ['value']) {
 				case "(" :
 					$this->getNextToken ();
-					return '';
+					$value = $this->expressionAst ();
+					$this->expectToken ( FL_TOKEN_JS_PUNC, ")" );
+					return $this->subScripts ( $value, $allowCalls );
+				case "[" :
+					$this->getNextToken ();
+					return $this->subScripts ( $this->arrayStatement (), $allowCalls );
+				case "{" :
+					$this->getNextToken ();
+					return $this->subScripts ( $this->objectStatement (), $allowCalls );
 			}
 		}
 	}
-	public function maybeConditional() {
-		$expr = $this->exprOps ();
+	/**
+	 * 
+	 * 数组的处理
+	 */
+	public function arrayStatement() {
+		return array ("array", $this->exprList ( "]", true, true ) );
+	}
+	/**
+	 * 
+	 * 对象的处理
+	 */
+	public function objectStatement() {
+		$first = true;
+		$result = array ();
+		while ( ! $this->isToken ( FL_TOKEN_JS_PUNC, "}" ) ) {
+			if ($first) {
+				$first = false;
+			} else {
+				$this->expectToken ( FL_TOKEN_JS_PUNC, "," );
+			}
+			if ($this->isToken ( FL_TOKEN_JS_PUNC, "}" )) {
+				break;
+			}
+			$type = $this->currentToken ['type'];
+			if ($type === FL_TOKEN_JS_STRING || $type === FL_TOKEN_JS_NUMBER) {
+				$name = $this->currentToken ['value'];
+				$this->getNextToken ();
+			} else {
+				$name = $this->asName ();
+			}
+			if ($type === FL_TOKEN_JS_NAME && ($name === "set" || $name === "get") && ! $this->isToken ( FL_TOKEN_JS_PUNC, ":" )) {
+				$result [] = array ($this->asName (), $this->functionStatement ( false ), $name );
+			} else {
+				$this->expectToken ( FL_TOKEN_JS_PUNC, ":" );
+				$result [] = array ($name, $this->expressionAst ( false ) );
+			}
+		}
+		$this->getNextToken ();
+		return array ("object", $result );
+	}
+	/**
+	 * 
+	 * 可能是个判断条件
+	 */
+	public function maybeConditional($notIn = false) {
+		$expr = $this->exprOperators ( $notIn );
+		if ($this->isToken ( FL_TOKEN_JS_OPERATOR, "?" )) {
+			$this->getNextToken ();
+			$yes = $this->expressionAst ( false );
+			$this->expectToken ( FL_TOKEN_JS_PUNC, ":" );
+			return array ("conditional", $expr, $yes, $this->expressionAst ( false, $notIn ) );
+		}
+		return $expr;
 	}
 	/**
 	 * 
 	 * 可能是赋值
 	 * @param boolean $notIn
 	 */
-	public function maybeAssign($notIn) {
+	public function maybeAssign($notIn = false) {
 		$left = $this->maybeConditional ( $notIn );
 		$value = $this->currentToken ['value'];
 		if ($this->isToken ( FL_TOKEN_JS_OPERATOR ) && Fl_Js_Static::isAssignment ( $value )) {
@@ -241,7 +683,7 @@ class Fl_Js_Ast extends Fl_Base {
 	 * @param boolean $notIn
 	 */
 	public function expressionAst($commas = true, $notIn = false) {
-		$expr = maybeAssign ( $notIn );
+		$expr = $this->maybeAssign ( $notIn );
 		if ($commas && $this->isToken ( FL_TOKEN_JS_PUNC, "," )) {
 			$this->getNextToken ();
 			return array ('seq', $expr, $this->expressionAst ( true, $notIn ) );
@@ -324,8 +766,10 @@ class Fl_Js_Ast extends Fl_Base {
 	 */
 	public function inLoop($fn = '') {
 		try {
+			$args = func_get_args ();
+			array_shift ( $args );
 			++ $this->loopDepth;
-			$this->$fn ();
+			$this->$fn ( $args );
 		} catch ( Fl_Exception $e ) {
 			//do nothing
 		}
@@ -361,7 +805,9 @@ class Fl_Js_Ast extends Fl_Base {
 			case FL_TOKEN_JS_OPERATOR :
 			case FL_TOKEN_JS_KEYWORD :
 			case FL_TOKEN_JS_ATOM :
-				return $this->execEach ( $this->currentToken ['value'], 'getNextToken' );
+				$value = $this->currentToken ['value'];
+				$this->getNextToken ();
+				return $value;
 			default :
 				$this->unexpectTokenError ();
 		}

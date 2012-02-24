@@ -115,6 +115,12 @@ class Fl_Js_Static {
 	public static $precedence = array ("!=" => 6, "!==" => 6, "%" => 10, "&" => 5, "&&" => 2, "*" => 10, "+" => 9, "-" => 9, "/" => 10, "<" => 7, "<<" => 8, "<=" => 7, "==" => 6, "===" => 6, ">" => 7, ">=" => 7, ">>" => 8, ">>>" => 8, "^" => 4, "in" => 7, "instanceof" => 7, "|" => 3, "||" => 1 );
 	/**
 	 * 
+	 * 会出现标签的语法结构
+	 * @var array
+	 */
+	public static $labelStatement = array ("for", "do", "while", "switch" );
+	/**
+	 * 
 	 * 判断接下来是否允许正则
 	 * @param string $type
 	 * @param string $value
@@ -282,10 +288,28 @@ class Fl_Js_Static {
 	public static function getPrecedenceValue($key) {
 		return self::$precedence [$key];
 	}
+	/**
+	 * 
+	 * 是否是一元操作符前缀
+	 * @param string $key
+	 */
 	public static function isUnaryPrefix($key) {
 		return in_array ( $key, self::$unaryPrefix );
 	}
+	/**
+	 * 
+	 * 是否是一元操作符后缀
+	 * @param string $key
+	 */
 	public static function isUnarySuffix($key) {
 		return in_array ( $key, self::$unarySuffix );
+	}
+	/**
+	 * 
+	 * 是否标签语法结构
+	 * @param string $keyword
+	 */
+	public static function isLabelStatement($keyword) {
+		return in_array ( $keyword, self::$labelStatement );
 	}
 }

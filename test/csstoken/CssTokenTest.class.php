@@ -94,4 +94,10 @@ class CssTokenTest extends FlTest {
 		$this->assertEqual ( count ( $tokens ), 7 );
 		$this->assertEqual ( $tokens [4] ['value'], 'expression((documentElement.clientWidth < 725) ? "725px" : "auto" )' );
 	}
+	public function test11() {
+		$this->getFlInstance ();
+		$tokens = $this->getTokens ( '11.text' );
+		$this->assertEqual ( count ( $tokens ), 7 );
+		$this->assertEqual ( $tokens [4] ['value'], 'progid:DXImageTransform.Microsoft.AlphaImageLoader(src="http://dbl-space-test02.vm.baidu.com:8009/st/static/superpage/img/round_cover_grey.png?v=md5", enabled=true,sizingMethod="noscale")' );
+	}
 }
